@@ -1,6 +1,6 @@
 import configparser
 import pandas as pd
-import mysql.connector
+import pyodbc
 import smtplib
 import ssl
 # For guessing MIME type based on file name extension
@@ -13,18 +13,21 @@ from email.policy import SMTP
 
 
 def extract_data(filepath, config):
-    with mysql.connector.connect(
-        host=config['host'],
-        user=config['user'],
-        password=config['pass'],
-        database=config['db']
-    ) as mydb:
+    with pyodbc.connect((
+        'DRIVER=' + config['driver'] + ';'
+        'SERVER=' + config['host'] + ';'
+        'DATABASE=' + config['db'] + ';'
+        'UID=' + config['user'] + ';'
+        'PWD=' + config['pass']
+    )) as mydb:
+        now = datetime.now()
+        nowStr = now.strftime('%Y-%m-%d')
+        sql = '''SELECT res.calendar_id, cal.name, res.check_in, res.start_hour, res.end_hour
+        FROM c8fzf_dopbsp_reservations res
+        JOIN c8fzf_dopbsp_calendars cal on cal.id=res.calendar_id
+        WHERE check_in >= ? order by check_in, calendar_id, start_hour, end_hour'''
 
-        sql = '''SELECT calendar_id, check_in, start_hour, end_hour
-        FROM c8fzf_dopbsp_reservations
-        WHERE check_in >= current_date() order by check_in, calendar_id, start_hour, end_hour'''
-
-        result = pd.read_sql(sql, mydb)
+        result = pd.read_sql(sql, mydb, params=[nowStr])
         result.to_excel(filepath, index=False)
 
 
@@ -35,7 +38,7 @@ def send_mail(filepath, config, debug):
     password = config['pass']
     filename = filepath.split('/')[-1]
 
-    if host and port:
+    if host != '' and port != '':
         subject = 'Reservations update'
         body = ('See attached file with updated reservations.\n'
                 'Plase do not answer this mail, since it is generated from an automated system.\n'
